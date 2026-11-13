@@ -224,6 +224,7 @@ void AVLTree<Key, Value>::insert (const std::pair<const Key, Value> &new_item)
             if (std::abs(curr->getBalance()) > 1) {
                 // std::cout << "found imbalance: " << static_cast<int>(curr->getBalance()) << std::endl;
                 to_fix = curr;
+                break;
             }
         
     }
@@ -238,93 +239,86 @@ void AVLTree<Key, Value>::insert (const std::pair<const Key, Value> &new_item)
 template<class Key, class Value>
 void AVLTree<Key, Value>::remove(const Key& key)
 {
-    AVLNode<Key, Value>* ptr = static_cast<AVLNode<Key, Value>* >(this->internalFind(key));
+    AVLNode<Key, Value>* ptr =
+        static_cast<AVLNode<Key, Value>*>(this->internalFind(key));
+
     if (!ptr) {
         return;
     }
-    // std::cout << "removing " << static_cast<char>(key) << std::endl;
-    // std::cout << "before tree: "  << std::endl;
-    // this->print();
-    AVLNode<Key, Value>* l = ptr->getLeft();
-    AVLNode<Key, Value>* r = ptr->getRight();
 
-    // If no children, do no swaps
+    // If two children, swap with predecessor.
+    if (ptr->getLeft() && ptr->getRight()) {
+        AVLNode<Key, Value>* pred =
+            static_cast<AVLNode<Key, Value>*>(this->predecessor(ptr));
 
-    if (r && l) { // both, swap with pred
-        AVLNode<Key, Value>* pred = static_cast<AVLNode<Key, Value>* >(this->predecessor(ptr));
         nodeSwap(ptr, pred);
     }
 
-    else if (l) { // one child swap
-        nodeSwap(ptr, l);
-    }
-    else if (r) { // one child swap
-        nodeSwap(ptr, r);
-    }
+    // ptr now has at most one child.
+    AVLNode<Key, Value>* child =
+        ptr->getLeft() ? ptr->getLeft() : ptr->getRight();
 
-    bool is_left_child = false;
-    AVLNode<Key, Value>* curr = ptr->getParent();
-    if (!curr) {
+    AVLNode<Key, Value>* parent = ptr->getParent();
+
+    // Removing the root.
+    if (!parent) {
+        this->root_ = child;
+
+        if (child) {
+            child->setParent(nullptr);
+        }
+
         delete ptr;
-        ptr = nullptr;
         return;
     }
-    
-    if (ptr->getParent()) { // if parent, set parent's child to null before deletion
-        if (ptr->getParent()->getLeft() == ptr) {
-            is_left_child = true;
-            ptr->getParent()->setLeft(nullptr);
-        }
-        else if (ptr->getParent()->getRight() == ptr) {
-            ptr->getParent()->setRight(nullptr);
-        }
-    }
-    if (AVLNode<Key, Value>* p_child = ptr->getLeft()) {
-        p_child->setParent(ptr->getParent());
-    }
-    else if (AVLNode<Key, Value>* p_child = ptr->getRight()) {
-        p_child->setParent(ptr->getParent());
-    }
-    delete ptr;
-    ptr = nullptr;
 
-    // std::cout << "checking balances " << std::endl;
+    // Determine which side of the parent ptr occupies.
+    bool is_left_child = (parent->getLeft() == ptr);
+
+    // Replace ptr with its child.
+    if (is_left_child) {
+        parent->setLeft(child);
+    }
+    else {
+        parent->setRight(child);
+    }
+
+    if (child) {
+        child->setParent(parent);
+    }
+
+    delete ptr;
+
+    // Update balance factors moving upward.
+    AVLNode<Key, Value>* curr = parent;
     AVLNode<Key, Value>* to_fix = nullptr;
-    // auto pre_balance = curr->getBalance(); // getting balance before updating, if pre-balanced, no change to parent's balance and no need to further update
-    // curr->updateBalance(-1 + 2 * is_left_child); // updating balance of parent of node being removed
-    auto pre_balance = curr->getBalance();
-    curr->updateBalance(-1 + 2 * is_left_child);
-    // std::cout << "balance at first node " << static_cast<char>(curr->getKey()) << ", :" << static_cast<int>(curr->getBalance()) << std::endl;
-    while (curr->getParent() && pre_balance != 0) {
-        // std::cout << "pre_balance: " << static_cast<int>(pre_balance) << std::endl;
-        is_left_child = (curr == curr->getParent()->getLeft());
-        curr = curr->getParent();
-        pre_balance = curr->getBalance();
-        curr->updateBalance(-1 + 2 * is_left_child);
-        // std::cout << "updated balance: " << static_cast<int>(pre_balance) << std::endl;
+
+    while (curr) {
+
+        int old_balance = curr->getBalance();
+
+        curr->updateBalance(is_left_child ? 1 : -1);
+
         if (std::abs(curr->getBalance()) > 1) {
             to_fix = curr;
             break;
         }
 
-        // is_left_child = (curr == curr->getParent()->getLeft()); // getting side before moving onto parent
-
-        // curr = curr->getParent();
-        // pre_balance = curr->getBalance();
-        // is_left_child = (curr == curr->getParent()->getLeft());
-        // curr->updateBalance(-1 + 2 * is_left_child);
-        // // CHECK
-        
-    }
-    if (!curr->getParent()) {
-        curr->updateBalance(-1 + 2 * is_left_child);
-        if (std::abs(curr->getBalance()) > 1) {
-            to_fix = curr;
+        // If the subtree height did not decrease, stop.
+        if (old_balance != 0 && curr->getBalance() != 0) {
+            break;
         }
+
+        if (!curr->getParent()) {
+            break;
+        }
+
+        is_left_child =
+            (curr == curr->getParent()->getLeft());
+
+        curr = curr->getParent();
     }
-    
-    
-    // curr == root || curr->balance < -1 || > 1
+
     fix(to_fix);
 }
 
@@ -344,91 +338,70 @@ AVLNode<Key, Value>* AVLTree<Key, Value>::getRoot() {
 
 template<class Key, class Value>
 void AVLTree<Key, Value>::fix(AVLNode<Key, Value>* n) {
-    /*
-        P             P
-      n      ->    a
-         a       n
+    if (!n) return;
 
-    Zigzag (-2, 1) (left right) (rotateLeft(n)) (rotateRight(P))
-    Zigzag(2, -1) (right, left)
-    Zigzig (-2, -1) rotateRight(P)
-    zigzig (2, 1) rotateLeft(P)
+    if (n->getBalance() < -1) {
 
-    */
-    if (n == nullptr) {
-        return;
-    }
-    if (n->getBalance() < 0) {
-        if (n->getLeft()->getBalance() < 0) { // zig zig left
+        AVLNode<Key, Value>* left = n->getLeft();
+
+        if (left->getBalance() <= 0) {
             rotateRight(n);
         }
-        else { // zig zag left-right
-            rotateLeft(n->getLeft());
+        else {
+            rotateLeft(left);
             rotateRight(n);
         }
     }
-    else {
-        if (n->getRight()->getBalance() > 0) { // zig zig right
-            // std::cout << "in zig zig right" << std::endl;
+    else if (n->getBalance() > 1) {
+
+        AVLNode<Key, Value>* right = n->getRight();
+
+        if (right->getBalance() >= 0) {
             rotateLeft(n);
-            
         }
-        else { // zig zag right-left
-            rotateRight(n->getRight());
+        else {
+            rotateRight(right);
             rotateLeft(n);
-            
         }
     }
-    
-    
 }
 
 template<class Key, class Value>
 void AVLTree<Key, Value>::rotateRight(AVLNode<Key, Value>* n) {
-    /*
-            P
-        n
-     a     b
-   .   t
-    
-    */
-//    std::cout << "before fix" << std::endl;
-    // this->print();
-    // std::cout << "rotating right about " << n->getKey() << std::endl;
     AVLNode<Key, Value>* a = n->getLeft();
-    if (!a) {
-        // std::cout << "nothing to rotate" << std::endl;
-        return;
-    }
+
+    if (!a) return;
 
     AVLNode<Key, Value>* parent = n->getParent();
+
     a->setParent(parent);
+
     if (parent) {
         if (parent->getRight() == n) {
             parent->setRight(a);
         } else {
             parent->setLeft(a);
         }
-    }
-    else {
+    } else {
         this->root_ = a;
     }
+
     AVLNode<Key, Value>* temp = a->getRight();
+
     a->setRight(n);
     n->setParent(a);
+
     n->setLeft(temp);
 
-
+    if (temp) {
+        temp->setParent(n);
+    }
 
     int oldNBF = n->getBalance();
     int oldABF = a->getBalance();
 
     n->setBalance(oldNBF + 1 - std::min(oldABF, 0));
     a->setBalance(oldABF + 1 + std::max(static_cast<int>(n->getBalance()), 0));
-
-    // std::cout << "new balances: " << static_cast<int>(n->getBalance()) << ", " << static_cast<int>(a->getBalance()) << std::endl;
-    // std::cout << "after fix" << std::endl;
-    // this->print();
 }
 
 template<class Key, class Value>

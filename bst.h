@@ -249,7 +249,8 @@ protected:
     virtual void printRoot (Node<Key, Value> *r) const;
     virtual void nodeSwap( Node<Key,Value>* n1, Node<Key,Value>* n2) ;
 
-    int get_depth(Node<Key, Value>* root); // helper for balanced
+    int get_depth(Node<Key, Value>* root) const; // helper for balanced
+    int isBalancedHelper(Node<Key, Value>* root) const;
     // Add helper functions here
 
 
@@ -527,40 +528,44 @@ void BinarySearchTree<Key, Value>::insert(const std::pair<const Key, Value> &key
 template<typename Key, typename Value>
 void BinarySearchTree<Key, Value>::remove(const Key& key)
 {
-    if (auto ptr = internalFind(key)) {
+    Node<Key, Value>* ptr = internalFind(key);
 
-        auto l = ptr->getLeft();
-        auto r = ptr->getRight();
-
-        // If no children, do no swaps
-
-        if (r && l) { // both, swap with pred
-            auto pred = predecessor(ptr);
-            nodeSwap(ptr, pred);
-        }
-
-        else if (l) { // one child swap
-            nodeSwap(ptr, l);
-        }
-        else if (r) { // one child swap
-            nodeSwap(ptr, r);
-        }
-        if (ptr->getParent()) { // if parent, set parent's child to null before deletion
-            if (ptr->getParent()->getLeft() == ptr) {
-                ptr->getParent()->setLeft(nullptr);
-            }
-            else if (ptr->getParent()->getRight() == ptr) {
-                ptr->getParent()->setRight(nullptr);
-            }
-        }
-    
-        delete ptr;
-        ptr = nullptr;
-
+    if (!ptr) {
         return;
     }
 
-    // if not found, do nothing
+    if (ptr->getLeft() && ptr->getRight()) {
+        Node<Key, Value>* pred = predecessor(ptr);
+        nodeSwap(ptr, pred);
+    }
+
+    // ptr has at most one child.
+    Node<Key, Value>* child = nullptr;
+
+    if (ptr->getLeft()) {
+        child = ptr->getLeft();
+    }
+    else if (ptr->getRight()) {
+        child = ptr->getRight();
+    }
+
+    Node<Key, Value>* parent = ptr->getParent();
+
+    if (child) {
+        child->setParent(parent);
+    }
+
+    if (!parent) {
+        root_ = child;
+    }
+    else if (parent->getLeft() == ptr) {
+        parent->setLeft(child);
+    }
+    else {
+        parent->setRight(child);
+    }
+
+    delete ptr;
 }
 
 template<class Key, class Value>
@@ -603,6 +608,7 @@ void BinarySearchTree<Key, Value>::clear()
         delete to_delete.front();
         to_delete.pop();
     }
+    this->root_ = nullptr;
 }
 
 
@@ -643,7 +649,7 @@ Node<Key, Value>* BinarySearchTree<Key, Value>::internalFind(const Key& key) con
     return temp;
 }
 template<typename Key, typename Value>
-int BinarySearchTree<Key, Value>::get_depth(Node<Key, Value>* root) {
+int BinarySearchTree<Key, Value>::get_depth(Node<Key, Value>* root) const {
     if (root == nullptr) {
         return 0;
     }
@@ -660,11 +666,28 @@ int BinarySearchTree<Key, Value>::get_depth(Node<Key, Value>* root) {
 template<typename Key, typename Value>
 bool BinarySearchTree<Key, Value>::isBalanced() const
 {
-    if (!root_) {
-        return true;
-    }
+    return isBalancedHelper(root_) != -1;
+}
 
-    return std::abs(get_depth(this->root_->right_) - get_depth(this->root_->left_)) <= 1;
+template<typename Key, typename Value>
+int BinarySearchTree<Key, Value>::isBalancedHelper(Node<Key, Value>* root) const
+{
+    if (!root) {
+        return 0;
+    }
+    int right_depth = isBalancedHelper(root->getRight());
+    if (right_depth == -1) {
+        return -1;
+    }
+    int left_depth = isBalancedHelper(root->getLeft());
+    if (left_depth == -1) {
+        return -1;
+    }
+    if (std::abs(right_depth - left_depth) > 1) {
+        return -1;
+    }
+    
+    return 1 + std::max(left_depth, right_depth);
 }
 
 
